@@ -282,7 +282,3 @@ Apache 2.0 - See [LICENSE](LICENSE)
 
 - **Issues:** https://github.com/millstonehq/base-images/issues
 
-
-
-## Test
-This is a test to verify the feedback loop is fixed.
