@@ -1,0 +1,39 @@
+name: Test Base Images
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test-build:
+    name: Test Build All Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Download Earthly
+        run: |
+          wget https://github.com/earthly/earthly/releases/latest/download/earthly-linux-amd64 -O /usr/local/bin/earthly
+          chmod +x /usr/local/bin/earthly
+          earthly --version
+
+      - name: Build All Images
+        env:
+          FORCE_COLOR: 1
+        run: |
+          earthly --ci +all
+
+      - name: Test Summary
+        if: success()
+        run: |
+          echo "✓ All base images built successfully"
+          echo "  - base-builder"
+          echo "  - base-runtime"
+          echo "  - base-go"
+          echo "  - base-go-runtime"
