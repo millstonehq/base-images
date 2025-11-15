@@ -1,39 +1,103 @@
-name: Test Base Images
+name: Build and Publish Base Images
 
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  test-build:
-    name: Test Build All Images
+  build-and-publish:
+    name: Build and Publish Multi-Arch Images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Login to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download Earthly
-        run: |
-          wget https://github.com/earthly/earthly/releases/latest/download/earthly-linux-amd64 -O /usr/local/bin/earthly
-          chmod +x /usr/local/bin/earthly
-          earthly --version
+      - name: Build Multi-Arch Images
+        uses: ./.github/actions/build-images
+        with:
+          earthly-target: '+publish-multiarch'
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
-      - name: Build All Images
-        env:
-          FORCE_COLOR: 1
-        run: |
-          earthly --ci +all
-
-      - name: Test Summary
-        if: success()
+      - name: Build Summary (PR)
+        if: success() && github.event_name == 'pull_request'
         run: |
           echo "✓ All base images built successfully"
-          echo "  - base-builder"
-          echo "  - base-runtime"
-          echo "  - base-go"
-          echo "  - base-go-runtime"
+          echo "  Foundation:"
+          echo "    - base-builder"
+          echo "    - base-runtime"
+          echo "  Language images:"
+          echo "    - base-go / base-go-runtime (Go 1.25)"
+          echo "    - base-python / base-python-runtime (Python 3.14)"
+          echo "    - base-java / base-java-runtime (Java 25)"
+          echo ""
+          echo "Platforms: linux/amd64, linux/arm64"
+
+      - name: Publish Summary
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "✓ Successfully published base images"
+          echo ""
+          echo "Published images:"
+          echo "  Foundation:"
+          echo "    - ghcr.io/millstonehq/base:builder"
+          echo "    - ghcr.io/millstonehq/base:runtime"
+          echo "  Go:"
+          echo "    - ghcr.io/millstonehq/go:1.25"
+          echo "    - ghcr.io/millstonehq/go:1.25-runtime"
+          echo "  Python:"
+          echo "    - ghcr.io/millstonehq/python:3.14"
+          echo "    - ghcr.io/millstonehq/python:3.14-runtime"
+          echo "  Java:"
+          echo "    - ghcr.io/millstonehq/java:25"
+          echo "    - ghcr.io/millstonehq/java:25-runtime"
+          echo ""
+          echo "Platforms: linux/amd64, linux/arm64"
+          echo ""
+          echo "Usage:"
+          echo "  FROM ghcr.io/millstonehq/go:1.25"
+          echo "  FROM ghcr.io/millstonehq/python:3.14"
+          echo "  FROM ghcr.io/millstonehq/java:25"
+
+      - name: Check if commit is from Copybara Export
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: check-origin
+        run: |
+          # Check if the latest commit has GitOrigin-RevId (means it came from mill export)
+          if git log -1 --format=%B | grep -q "GitOrigin-RevId:"; then
+            echo "is_from_mill=true" >> $GITHUB_OUTPUT
+            echo "⏭️  Skipping import: commit came from mill (has GitOrigin-RevId)"
+          else
+            echo "is_from_mill=false" >> $GITHUB_OUTPUT
+            echo "✓ Will trigger import: external contribution detected"
+          fi
+
+      - name: Generate GitHub App Token for Cross-Repo Dispatch
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.check-origin.outputs.is_from_mill == 'false'
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.COPYBARA_APP_ID }}
+          private-key: ${{ secrets.COPYBARA_APP_PRIVATE_KEY }}
+          repositories: mill,base-images
+
+      - name: Trigger Copybara Import to Mill
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.check-origin.outputs.is_from_mill == 'false'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          repository: millstonehq/mill
+          event-type: copybara-import-base-images

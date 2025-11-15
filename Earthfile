@@ -15,10 +15,7 @@ base-builder:
         jq \
         wget \
         yq \
-        curl \
-        build-base \
-        bison \
-        flex
+        curl
 
     # /app is the generic folder set up by default for all workspace content
     WORKDIR /app
@@ -42,7 +39,7 @@ base-builder:
 
     USER nonroot
 
-    SAVE IMAGE ghcr.io/millstonehq/base-builder:latest
+    SAVE IMAGE ghcr.io/millstonehq/base:builder
 
 # ========================================
 # Base Runtime Image
@@ -68,7 +65,7 @@ base-runtime:
 
     USER nonroot
 
-    SAVE IMAGE ghcr.io/millstonehq/base-runtime:latest
+    SAVE IMAGE ghcr.io/millstonehq/base:runtime
 
 # ========================================
 # Go Builder Image
@@ -77,7 +74,7 @@ base-runtime:
 # Use this for building Go applications
 
 base-go:
-    ARG GOLANG_VERSION=1.22
+    ARG GOLANG_VERSION=1.25
     FROM +base-builder
 
     USER root
@@ -89,7 +86,7 @@ base-go:
 
     ENV PATH="${PATH}:$(go env GOPATH)/bin"
 
-    SAVE IMAGE ghcr.io/millstonehq/base-go:latest
+    SAVE IMAGE ghcr.io/millstonehq/go:${GOLANG_VERSION}
 
 # ========================================
 # Go Runtime Image
@@ -98,9 +95,107 @@ base-go:
 # Use this for compiled Go binaries that are statically linked
 
 base-go-runtime:
+    ARG GOLANG_VERSION=1.25
     FROM +base-runtime
 
-    SAVE IMAGE ghcr.io/millstonehq/base-go-runtime:latest
+    SAVE IMAGE ghcr.io/millstonehq/go:${GOLANG_VERSION}-runtime
+
+# ========================================
+# Python Builder Image
+# ========================================
+# Inherits from base-builder and adds Python toolchain + uv
+# Use this for building Python applications
+
+base-python:
+    ARG PYTHON_VERSION=3.14
+    FROM +base-builder
+
+    USER root
+    RUN apk add python-${PYTHON_VERSION} py${PYTHON_VERSION}-pip
+    USER nonroot
+
+    # Install uv package manager
+    RUN pip install -Iv "uv==0.7.10"
+
+    # Configure uv for optimal Docker usage
+    # - Use copy mode instead of hard links
+    # - Byte-compile packages for faster startups
+    # - Prevent downloading isolated Python builds
+    # - Set Python version and project environment
+    ENV UV_LINK_MODE=copy
+    ENV UV_COMPILE_BYTECODE=1
+    ENV UV_PYTHON_DOWNLOADS=never
+    ENV UV_PYTHON=python${PYTHON_VERSION}
+    ENV UV_PROJECT_ENVIRONMENT=/app
+
+    # Verify Python installation
+    RUN python${PYTHON_VERSION} --version && uv --version
+
+    SAVE IMAGE ghcr.io/millstonehq/python:${PYTHON_VERSION}
+
+# ========================================
+# Python Runtime Image
+# ========================================
+# Minimal Python runtime base - just runtime + Python, no build tools
+# Use this for production Python applications
+
+base-python-runtime:
+    ARG PYTHON_VERSION=3.14
+    FROM +base-runtime
+
+    USER root
+    RUN apk add python-${PYTHON_VERSION}
+    USER nonroot
+
+    ENV UV_PYTHON=python${PYTHON_VERSION}
+
+    SAVE IMAGE ghcr.io/millstonehq/python:${PYTHON_VERSION}-runtime
+
+# ========================================
+# Java Builder Image
+# ========================================
+# Inherits from base-builder and adds JDK + Maven + Gradle
+# Use this for building Java applications
+
+base-java:
+    ARG JAVA_VERSION=25
+    FROM +base-builder
+
+    USER root
+    RUN apk add openjdk-${JAVA_VERSION}-default-jdk maven gradle
+
+    # Create maven repository in nonroot user's home directory
+    RUN mkdir -p /home/nonroot/.m2 && \
+        chown -R nonroot:nonroot /home/nonroot/.m2
+
+    # Configure Maven to use the cache directory
+    ENV MAVEN_OPTS="-Dmaven.repo.local=/home/nonroot/.m2"
+    ENV JAVA_HOME=/usr/lib/jvm/java-${JAVA_VERSION}-openjdk
+
+    USER nonroot
+
+    # Verify Java installation
+    RUN java -version && mvn -version && gradle -version
+
+    SAVE IMAGE ghcr.io/millstonehq/java:${JAVA_VERSION}
+
+# ========================================
+# Java Runtime Image
+# ========================================
+# Minimal Java runtime base - just runtime + JRE, no build tools
+# Use this for production Java applications
+
+base-java-runtime:
+    ARG JAVA_VERSION=25
+    FROM +base-runtime
+
+    USER root
+    RUN apk add openjdk-${JAVA_VERSION}-jre
+    USER nonroot
+
+    ENV JAVA_HOME=/usr/lib/jvm/java-${JAVA_VERSION}-openjdk
+
+    SAVE IMAGE ghcr.io/millstonehq/java:${JAVA_VERSION}-runtime
 
 # ========================================
 # Build All Images
@@ -112,6 +207,10 @@ all:
     BUILD +base-runtime
     BUILD +base-go
     BUILD +base-go-runtime
+    BUILD +base-python
+    BUILD +base-python-runtime
+    BUILD +base-java
+    BUILD +base-java-runtime
 
 # ========================================
 # Publish All Images
@@ -127,6 +226,10 @@ publish:
     BUILD +base-runtime --tag=$VERSION
     BUILD +base-go --tag=$VERSION
     BUILD +base-go-runtime --tag=$VERSION
+    BUILD +base-python --tag=$VERSION
+    BUILD +base-python-runtime --tag=$VERSION
+    BUILD +base-java --tag=$VERSION
+    BUILD +base-java-runtime --tag=$VERSION
 
 # ========================================
 # Versioned Image Targets
@@ -134,33 +237,55 @@ publish:
 # These allow building images with specific tags
 
 base-builder-versioned:
-    ARG tag=latest
     FROM +base-builder
-    SAVE IMAGE --push ghcr.io/millstonehq/base-builder:${tag}
+    SAVE IMAGE --push ghcr.io/millstonehq/base:builder
 
 base-runtime-versioned:
-    ARG tag=latest
     FROM +base-runtime
-    SAVE IMAGE --push ghcr.io/millstonehq/base-runtime:${tag}
+    SAVE IMAGE --push ghcr.io/millstonehq/base:runtime
 
 base-go-versioned:
-    ARG tag=latest
-    ARG GOLANG_VERSION=1.22
+    ARG GOLANG_VERSION=1.25
     FROM +base-go --GOLANG_VERSION=${GOLANG_VERSION}
-    SAVE IMAGE --push ghcr.io/millstonehq/base-go:${tag}
+    SAVE IMAGE --push ghcr.io/millstonehq/go:${GOLANG_VERSION}
 
 base-go-runtime-versioned:
-    ARG tag=latest
-    FROM +base-go-runtime
-    SAVE IMAGE --push ghcr.io/millstonehq/base-go-runtime:${tag}
+    ARG GOLANG_VERSION=1.25
+    FROM +base-go-runtime --GOLANG_VERSION=${GOLANG_VERSION}
+    SAVE IMAGE --push ghcr.io/millstonehq/go:${GOLANG_VERSION}-runtime
+
+base-python-versioned:
+    ARG PYTHON_VERSION=3.14
+    FROM +base-python --PYTHON_VERSION=${PYTHON_VERSION}
+    SAVE IMAGE --push ghcr.io/millstonehq/python:${PYTHON_VERSION}
+
+base-python-runtime-versioned:
+    ARG PYTHON_VERSION=3.14
+    FROM +base-python-runtime --PYTHON_VERSION=${PYTHON_VERSION}
+    SAVE IMAGE --push ghcr.io/millstonehq/python:${PYTHON_VERSION}-runtime
+
+base-java-versioned:
+    ARG JAVA_VERSION=25
+    FROM +base-java --JAVA_VERSION=${JAVA_VERSION}
+    SAVE IMAGE --push ghcr.io/millstonehq/java:${JAVA_VERSION}
+
+base-java-runtime-versioned:
+    ARG JAVA_VERSION=25
+    FROM +base-java-runtime --JAVA_VERSION=${JAVA_VERSION}
+    SAVE IMAGE --push ghcr.io/millstonehq/java:${JAVA_VERSION}-runtime
 
 # Multi-platform publishing
 publish-multiarch:
-    ARG tag=latest
-    ARG GOLANG_VERSION=1.22
-    FROM alpine:latest
+    ARG GOLANG_VERSION=1.25
+    ARG PYTHON_VERSION=3.14
+    ARG JAVA_VERSION=25
+    FROM cgr.dev/chainguard/wolfi-base:latest
 
-    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-builder-versioned --tag=${tag}
-    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-runtime-versioned --tag=${tag}
-    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-go-versioned --tag=${tag} --GOLANG_VERSION=${GOLANG_VERSION}
-    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-go-runtime-versioned --tag=${tag}
+    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-builder-versioned
+    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-runtime-versioned
+    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-go-versioned --GOLANG_VERSION=${GOLANG_VERSION}
+    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-go-runtime-versioned --GOLANG_VERSION=${GOLANG_VERSION}
+    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-python-versioned --PYTHON_VERSION=${PYTHON_VERSION}
+    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-python-runtime-versioned --PYTHON_VERSION=${PYTHON_VERSION}
+    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-java-versioned --JAVA_VERSION=${JAVA_VERSION}
+    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-java-runtime-versioned --JAVA_VERSION=${JAVA_VERSION}
