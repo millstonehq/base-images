@@ -1,4 +1,4 @@
-name: Build and Publish Base Images
+name: CI - Base Images
 
 on:
   pull_request:
