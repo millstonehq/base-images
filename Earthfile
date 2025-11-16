@@ -198,6 +198,40 @@ base-java-runtime:
     SAVE IMAGE ghcr.io/millstonehq/java:${JAVA_VERSION}-runtime
 
 # ========================================
+# OpenTofu Builder Image
+# ========================================
+# OpenTofu builder base - builder + tofu for schema extraction and builds
+# Use this for building Crossplane providers that need terraform schema
+
+base-tofu-builder:
+    FROM +base-builder
+
+    USER root
+    RUN apk add opentofu
+    USER nonroot
+
+    SAVE IMAGE ghcr.io/millstonehq/tofu:builder
+
+# ========================================
+# OpenTofu Runtime Image
+# ========================================
+# Minimal tofu runtime base - just runtime + tofu, no build tools
+# Use this for running Crossplane providers in production
+# Includes terraform→tofu symlink for Upjet compatibility
+
+base-tofu-runtime:
+    FROM +base-runtime
+
+    USER root
+    # Install OpenTofu (Upjet downloads provider plugins at runtime)
+    RUN apk add opentofu
+    # Upjet looks for "terraform" binary, create symlink
+    RUN ln -sf /usr/bin/tofu /usr/bin/terraform
+    USER nonroot
+
+    SAVE IMAGE ghcr.io/millstonehq/tofu:runtime
+
+# ========================================
 # Build All Images
 # ========================================
 # Target to build all base images
@@ -211,6 +245,8 @@ all:
     BUILD +base-python-runtime
     BUILD +base-java
     BUILD +base-java-runtime
+    BUILD +base-tofu-builder
+    BUILD +base-tofu-runtime
 
 # ========================================
 # Publish All Images
@@ -274,6 +310,14 @@ base-java-runtime-versioned:
     FROM +base-java-runtime --JAVA_VERSION=${JAVA_VERSION}
     SAVE IMAGE --push ghcr.io/millstonehq/java:${JAVA_VERSION}-runtime
 
+base-tofu-builder-versioned:
+    FROM +base-tofu-builder
+    SAVE IMAGE --push ghcr.io/millstonehq/tofu:builder
+
+base-tofu-runtime-versioned:
+    FROM +base-tofu-runtime
+    SAVE IMAGE --push ghcr.io/millstonehq/tofu:runtime
+
 # Multi-platform publishing
 publish-multiarch:
     ARG GOLANG_VERSION=1.25
@@ -289,3 +333,5 @@ publish-multiarch:
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-python-runtime-versioned --PYTHON_VERSION=${PYTHON_VERSION}
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-java-versioned --JAVA_VERSION=${JAVA_VERSION}
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-java-runtime-versioned --JAVA_VERSION=${JAVA_VERSION}
+    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-tofu-builder-versioned
+    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-tofu-runtime-versioned
