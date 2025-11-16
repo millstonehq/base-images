@@ -146,10 +146,8 @@ FROM base+base-java-runtime --JAVA_VERSION=25
 ```earthfile
 VERSION 0.8
 
-IMPORT github.com/millstonehq/base-images:v1.0.0 AS base
-
 build:
-    FROM base+base-go --GOLANG_VERSION=1.25
+    FROM ghcr.io/millstonehq/go:1.25
     WORKDIR /app
 
     COPY go.mod go.sum ./
@@ -161,7 +159,7 @@ build:
     SAVE ARTIFACT myapp
 
 image:
-    FROM base+base-go-runtime
+    FROM ghcr.io/millstonehq/go:1.25-runtime
     COPY +build/myapp /app/myapp
     ENTRYPOINT ["/app/myapp"]
     SAVE IMAGE --push ghcr.io/myorg/myapp:latest
@@ -172,10 +170,8 @@ image:
 ```earthfile
 VERSION 0.8
 
-IMPORT github.com/millstonehq/base-images:v1.0.0 AS base
-
 build:
-    FROM base+base-python --PYTHON_VERSION=3.14
+    FROM ghcr.io/millstonehq/python:3.14
     WORKDIR /app
 
     COPY pyproject.toml uv.lock ./
@@ -187,7 +183,7 @@ build:
     SAVE ARTIFACT .venv
 
 image:
-    FROM base+base-python-runtime
+    FROM ghcr.io/millstonehq/python:3.14-runtime
     COPY +build/.venv /app/.venv
     COPY . /app
     ENTRYPOINT ["python", "main.py"]
@@ -199,10 +195,8 @@ image:
 ```earthfile
 VERSION 0.8
 
-IMPORT github.com/millstonehq/base-images:v1.0.0 AS base
-
 build:
-    FROM base+base-java --JAVA_VERSION=25
+    FROM ghcr.io/millstonehq/java:25
     WORKDIR /app
 
     COPY pom.xml ./
@@ -214,7 +208,7 @@ build:
     SAVE ARTIFACT target/*.jar app.jar
 
 image:
-    FROM base+base-java-runtime
+    FROM ghcr.io/millstonehq/java:25-runtime
     COPY +build/app.jar /app/app.jar
     ENTRYPOINT ["java", "-jar", "/app/app.jar"]
     SAVE IMAGE --push ghcr.io/myorg/myapp:latest
@@ -223,10 +217,8 @@ image:
 ### Custom Builder Image
 
 ```earthfile
-IMPORT github.com/millstonehq/base-images:v1.0.0 AS base
-
 custom-builder:
-    FROM base+base-builder
+    FROM ghcr.io/millstonehq/base:builder
 
     # Add custom build tools
     USER root
@@ -238,28 +230,18 @@ custom-builder:
 
 ## Versioning
 
-We follow [Semantic Versioning](https://semver.org/):
+Docker images are tagged by language version:
+- `ghcr.io/millstonehq/go:1.25` / `ghcr.io/millstonehq/go:1.25-runtime`
+- `ghcr.io/millstonehq/python:3.14` / `ghcr.io/millstonehq/python:3.14-runtime`
+- `ghcr.io/millstonehq/java:25` / `ghcr.io/millstonehq/java:25-runtime`
+- `ghcr.io/millstonehq/base:builder` / `ghcr.io/millstonehq/base:runtime`
 
-- **Major (v2.0.0):** Breaking changes (different base image, removed packages)
-- **Minor (v1.1.0):** New packages, non-breaking updates
-- **Patch (v1.0.1):** Security updates, Wolfi base updates
-
-### Version Pinning
-
-**Recommended:** Pin to minor versions for stability
+Images are automatically published on every merge to main. For advanced use cases requiring Earthfile targets, you can import directly:
 
 ```earthfile
-# Good: receives patch updates automatically
-IMPORT github.com/millstonehq/base-images:v1.0.0 AS base
-
-# Also valid: pin to exact version
-IMPORT github.com/millstonehq/base-images@sha256:abc123... AS base
+IMPORT github.com/millstonehq/base-images AS base
+FROM base+base-go --GOLANG_VERSION=1.25
 ```
-
-### Latest Tags
-
-- `latest` - tracks the most recent release (not recommended for production)
-- `v1.0.0` - specific version (recommended)
 
 ## Security
 
@@ -281,8 +263,3 @@ Apache 2.0 - See [LICENSE](LICENSE)
 ## Support
 
 - **Issues:** https://github.com/millstonehq/base-images/issues
-
-
-
-## Test
-This is a test to verify the feedback loop is fixed.
