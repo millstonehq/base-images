@@ -232,6 +232,35 @@ base-tofu-runtime:
     SAVE IMAGE ghcr.io/millstonehq/tofu:runtime
 
 # ========================================
+# Crossplane Builder Image
+# ========================================
+# Crossplane builder base - Go + OpenTofu + pre-compiled Crossplane tooling
+# Use this for building Crossplane providers (Upjet-based)
+# Pre-installs goimports, controller-gen, angryjet, and crossplane CLI
+
+base-crossplane-builder:
+    ARG GOLANG_VERSION=1.25
+    FROM +base-go --GOLANG_VERSION=${GOLANG_VERSION}
+
+    USER root
+    # Add OpenTofu and make (git already in base-builder)
+    RUN apk add opentofu make
+
+    # Pre-compile Crossplane code generation tools (the slow part)
+    RUN go install golang.org/x/tools/cmd/goimports@latest && \
+        go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest && \
+        go install github.com/crossplane/crossplane-tools/cmd/angryjet@latest && \
+        mv /root/go/bin/* /usr/local/bin/
+
+    # Install crossplane CLI for building xpkg packages
+    RUN curl -sL "https://releases.crossplane.io/stable/current/bin/linux_amd64/crank" -o /usr/local/bin/crossplane && \
+        chmod +x /usr/local/bin/crossplane
+
+    USER nonroot
+
+    SAVE IMAGE ghcr.io/millstonehq/crossplane:builder
+
+# ========================================
 # Build All Images
 # ========================================
 # Target to build all base images
@@ -247,6 +276,7 @@ all:
     BUILD +base-java-runtime
     BUILD +base-tofu-builder
     BUILD +base-tofu-runtime
+    BUILD +base-crossplane-builder
 
 # ========================================
 # Publish All Images
@@ -318,6 +348,11 @@ base-tofu-runtime-versioned:
     FROM +base-tofu-runtime
     SAVE IMAGE --push ghcr.io/millstonehq/tofu:runtime
 
+base-crossplane-builder-versioned:
+    ARG GOLANG_VERSION=1.25
+    FROM +base-crossplane-builder --GOLANG_VERSION=${GOLANG_VERSION}
+    SAVE IMAGE --push ghcr.io/millstonehq/crossplane:builder
+
 # Multi-platform publishing
 publish-multiarch:
     ARG GOLANG_VERSION=1.25
@@ -335,3 +370,4 @@ publish-multiarch:
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-java-runtime-versioned --JAVA_VERSION=${JAVA_VERSION}
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-tofu-builder-versioned
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-tofu-runtime-versioned
+    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-crossplane-builder-versioned --GOLANG_VERSION=${GOLANG_VERSION}
