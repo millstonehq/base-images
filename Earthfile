@@ -261,6 +261,43 @@ base-crossplane-builder:
     SAVE IMAGE ghcr.io/millstonehq/crossplane:builder
 
 # ========================================
+# Bun Builder Image
+# ========================================
+# Inherits from base-builder and adds Bun runtime
+# Use this for building JavaScript/TypeScript applications
+# Bun replaces Node.js + npm with a faster all-in-one runtime
+
+base-bun:
+    ARG BUN_VERSION=1
+    FROM +base-builder
+
+    USER root
+    RUN apk add bun
+    USER nonroot
+
+    RUN bun --version
+
+    SAVE IMAGE ghcr.io/millstonehq/bun:${BUN_VERSION}
+
+# ========================================
+# Bun Runtime Image
+# ========================================
+# Minimal Bun runtime base - just runtime + Bun, no build tools
+# Use this for production JavaScript/TypeScript applications
+
+base-bun-runtime:
+    ARG BUN_VERSION=1
+    FROM +base-runtime
+
+    USER root
+    RUN apk add bun
+    USER nonroot
+
+    ENV NODE_ENV=production
+
+    SAVE IMAGE ghcr.io/millstonehq/bun:${BUN_VERSION}-runtime
+
+# ========================================
 # Build All Images
 # ========================================
 # Target to build all base images
@@ -274,6 +311,8 @@ all:
     BUILD +base-python-runtime
     BUILD +base-java
     BUILD +base-java-runtime
+    BUILD +base-bun
+    BUILD +base-bun-runtime
     BUILD +base-tofu-builder
     BUILD +base-tofu-runtime
     BUILD +base-crossplane-builder
@@ -296,6 +335,8 @@ publish:
     BUILD +base-python-runtime --tag=$VERSION
     BUILD +base-java --tag=$VERSION
     BUILD +base-java-runtime --tag=$VERSION
+    BUILD +base-bun --tag=$VERSION
+    BUILD +base-bun-runtime --tag=$VERSION
 
 # ========================================
 # Versioned Image Targets
@@ -340,6 +381,16 @@ base-java-runtime-versioned:
     FROM +base-java-runtime --JAVA_VERSION=${JAVA_VERSION}
     SAVE IMAGE --push ghcr.io/millstonehq/java:${JAVA_VERSION}-runtime
 
+base-bun-versioned:
+    ARG BUN_VERSION=1
+    FROM +base-bun --BUN_VERSION=${BUN_VERSION}
+    SAVE IMAGE --push ghcr.io/millstonehq/bun:${BUN_VERSION}
+
+base-bun-runtime-versioned:
+    ARG BUN_VERSION=1
+    FROM +base-bun-runtime --BUN_VERSION=${BUN_VERSION}
+    SAVE IMAGE --push ghcr.io/millstonehq/bun:${BUN_VERSION}-runtime
+
 base-tofu-builder-versioned:
     FROM +base-tofu-builder
     SAVE IMAGE --push ghcr.io/millstonehq/tofu:builder
@@ -358,6 +409,7 @@ publish-multiarch:
     ARG GOLANG_VERSION=1.25
     ARG PYTHON_VERSION=3.14
     ARG JAVA_VERSION=25
+    ARG BUN_VERSION=1
     FROM cgr.dev/chainguard/wolfi-base:latest
 
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-builder-versioned
@@ -368,6 +420,8 @@ publish-multiarch:
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-python-runtime-versioned --PYTHON_VERSION=${PYTHON_VERSION}
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-java-versioned --JAVA_VERSION=${JAVA_VERSION}
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-java-runtime-versioned --JAVA_VERSION=${JAVA_VERSION}
+    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-bun-versioned --BUN_VERSION=${BUN_VERSION}
+    BUILD --platform=linux/amd64 --platform=linux/arm64 +base-bun-runtime-versioned --BUN_VERSION=${BUN_VERSION}
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-tofu-builder-versioned
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-tofu-runtime-versioned
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-crossplane-builder-versioned --GOLANG_VERSION=${GOLANG_VERSION}
