@@ -118,15 +118,13 @@ base-python:
     RUN pip install -Iv "uv==0.7.10"
 
     # Configure uv for optimal Docker usage
-    # - Use copy mode instead of hard links
+    # - Use copy mode instead of hard links (required for Docker)
     # - Byte-compile packages for faster startups
     # - Prevent downloading isolated Python builds
-    # - Set Python version and project environment
     ENV UV_LINK_MODE=copy
     ENV UV_COMPILE_BYTECODE=1
     ENV UV_PYTHON_DOWNLOADS=never
     ENV UV_PYTHON=python${PYTHON_VERSION}
-    ENV UV_PROJECT_ENVIRONMENT=/app
 
     # Verify Python installation
     RUN python${PYTHON_VERSION} --version && uv --version
