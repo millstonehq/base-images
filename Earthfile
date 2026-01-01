@@ -50,6 +50,9 @@ base-builder:
 base-runtime:
     FROM cgr.dev/chainguard/wolfi-base:latest
 
+    # Install git - commonly needed for runtime repo operations
+    RUN apk add --no-cache git
+
     # Set up workspace and user directories (minimal setup)
     WORKDIR /app
     RUN chown nonroot:nonroot /app
