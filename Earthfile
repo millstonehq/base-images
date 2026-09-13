@@ -345,65 +345,78 @@ publish:
 # These allow building images with specific tags
 
 base-builder-versioned:
+    ARG TAG_SUFFIX=""
     FROM +base-builder
-    SAVE IMAGE --push ghcr.io/millstonehq/base:builder
+    SAVE IMAGE --push ghcr.io/millstonehq/base:builder${TAG_SUFFIX}
 
 base-runtime-versioned:
+    ARG TAG_SUFFIX=""
     FROM +base-runtime
-    SAVE IMAGE --push ghcr.io/millstonehq/base:runtime
+    SAVE IMAGE --push ghcr.io/millstonehq/base:runtime${TAG_SUFFIX}
 
 base-go-versioned:
     ARG GOLANG_VERSION=1.25
+    ARG TAG_SUFFIX=""
     FROM +base-go --GOLANG_VERSION=${GOLANG_VERSION}
-    SAVE IMAGE --push ghcr.io/millstonehq/go:${GOLANG_VERSION}
+    SAVE IMAGE --push ghcr.io/millstonehq/go:${GOLANG_VERSION}${TAG_SUFFIX}
 
 base-go-runtime-versioned:
     ARG GOLANG_VERSION=1.25
+    ARG TAG_SUFFIX=""
     FROM +base-go-runtime --GOLANG_VERSION=${GOLANG_VERSION}
-    SAVE IMAGE --push ghcr.io/millstonehq/go:${GOLANG_VERSION}-runtime
+    SAVE IMAGE --push ghcr.io/millstonehq/go:${GOLANG_VERSION}-runtime${TAG_SUFFIX}
 
 base-python-versioned:
     ARG PYTHON_VERSION=3.14
+    ARG TAG_SUFFIX=""
     FROM +base-python --PYTHON_VERSION=${PYTHON_VERSION}
-    SAVE IMAGE --push ghcr.io/millstonehq/python:${PYTHON_VERSION}
+    SAVE IMAGE --push ghcr.io/millstonehq/python:${PYTHON_VERSION}${TAG_SUFFIX}
 
 base-python-runtime-versioned:
     ARG PYTHON_VERSION=3.14
+    ARG TAG_SUFFIX=""
     FROM +base-python-runtime --PYTHON_VERSION=${PYTHON_VERSION}
-    SAVE IMAGE --push ghcr.io/millstonehq/python:${PYTHON_VERSION}-runtime
+    SAVE IMAGE --push ghcr.io/millstonehq/python:${PYTHON_VERSION}-runtime${TAG_SUFFIX}
 
 base-java-versioned:
     ARG JAVA_VERSION=25
+    ARG TAG_SUFFIX=""
     FROM +base-java --JAVA_VERSION=${JAVA_VERSION}
-    SAVE IMAGE --push ghcr.io/millstonehq/java:${JAVA_VERSION}
+    SAVE IMAGE --push ghcr.io/millstonehq/java:${JAVA_VERSION}${TAG_SUFFIX}
 
 base-java-runtime-versioned:
     ARG JAVA_VERSION=25
+    ARG TAG_SUFFIX=""
     FROM +base-java-runtime --JAVA_VERSION=${JAVA_VERSION}
-    SAVE IMAGE --push ghcr.io/millstonehq/java:${JAVA_VERSION}-runtime
+    SAVE IMAGE --push ghcr.io/millstonehq/java:${JAVA_VERSION}-runtime${TAG_SUFFIX}
 
 base-bun-versioned:
     ARG BUN_VERSION=1
+    ARG TAG_SUFFIX=""
     FROM +base-bun --BUN_VERSION=${BUN_VERSION}
-    SAVE IMAGE --push ghcr.io/millstonehq/bun:${BUN_VERSION}
+    SAVE IMAGE --push ghcr.io/millstonehq/bun:${BUN_VERSION}${TAG_SUFFIX}
 
 base-bun-runtime-versioned:
     ARG BUN_VERSION=1
+    ARG TAG_SUFFIX=""
     FROM +base-bun-runtime --BUN_VERSION=${BUN_VERSION}
-    SAVE IMAGE --push ghcr.io/millstonehq/bun:${BUN_VERSION}-runtime
+    SAVE IMAGE --push ghcr.io/millstonehq/bun:${BUN_VERSION}-runtime${TAG_SUFFIX}
 
 base-tofu-builder-versioned:
+    ARG TAG_SUFFIX=""
     FROM +base-tofu-builder
-    SAVE IMAGE --push ghcr.io/millstonehq/tofu:builder
+    SAVE IMAGE --push ghcr.io/millstonehq/tofu:builder${TAG_SUFFIX}
 
 base-tofu-runtime-versioned:
+    ARG TAG_SUFFIX=""
     FROM +base-tofu-runtime
-    SAVE IMAGE --push ghcr.io/millstonehq/tofu:runtime
+    SAVE IMAGE --push ghcr.io/millstonehq/tofu:runtime${TAG_SUFFIX}
 
 base-crossplane-builder-versioned:
     ARG GOLANG_VERSION=1.25
+    ARG TAG_SUFFIX=""
     FROM +base-crossplane-builder --GOLANG_VERSION=${GOLANG_VERSION}
-    SAVE IMAGE --push ghcr.io/millstonehq/crossplane:builder
+    SAVE IMAGE --push ghcr.io/millstonehq/crossplane:builder${TAG_SUFFIX}
 
 # Multi-platform publishing
 publish-multiarch:
@@ -426,3 +439,51 @@ publish-multiarch:
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-tofu-builder-versioned
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-tofu-runtime-versioned
     BUILD --platform=linux/amd64 --platform=linux/arm64 +base-crossplane-builder-versioned --GOLANG_VERSION=${GOLANG_VERSION}
+
+# ========================================
+# Native Single-Architecture Publishing
+# ========================================
+# EVERY IMAGE FOR THE BUILDER'S OWN ARCHITECTURE, AND NO --platform ANYWHERE.
+#
+# +publish-multiarch asks one builder for both platforms, which needs that builder to emulate the
+# other one. Neither self-hosted buildkitd can: binfmt_misc is absent from the Talos kernel on the
+# amd64 node and present-but-empty on b1. These images `apk add` -- they EXECUTE target-arch
+# binaries during the build -- so a foreign host fails at exec rather than merely running slowly.
+#
+# So the caller invokes this once per architecture, each against the buildkitd whose CPU matches,
+# and passes TAG_SUFFIX so the two runs push to distinct tags. Merging those into one manifest list
+# is a registry metadata operation and belongs to crane in the workflow, not to a builder.
+publish-native:
+    ARG GOLANG_VERSION=1.25
+    ARG PYTHON_VERSION=3.14
+    ARG JAVA_VERSION=25
+    ARG BUN_VERSION=1
+    ARG TAG_SUFFIX=""
+    FROM cgr.dev/chainguard/wolfi-base:latest
+
+    # multiarch-lint: ignore one arch per invocation on its own native builder; ci-base-images.yml merges the two into a manifest list with crane
+    BUILD +base-builder-versioned --TAG_SUFFIX=${TAG_SUFFIX}
+    # multiarch-lint: ignore one arch per invocation on its own native builder; ci-base-images.yml merges the two into a manifest list with crane
+    BUILD +base-runtime-versioned --TAG_SUFFIX=${TAG_SUFFIX}
+    # multiarch-lint: ignore one arch per invocation on its own native builder; ci-base-images.yml merges the two into a manifest list with crane
+    BUILD +base-go-versioned --GOLANG_VERSION=${GOLANG_VERSION} --TAG_SUFFIX=${TAG_SUFFIX}
+    # multiarch-lint: ignore one arch per invocation on its own native builder; ci-base-images.yml merges the two into a manifest list with crane
+    BUILD +base-go-runtime-versioned --GOLANG_VERSION=${GOLANG_VERSION} --TAG_SUFFIX=${TAG_SUFFIX}
+    # multiarch-lint: ignore one arch per invocation on its own native builder; ci-base-images.yml merges the two into a manifest list with crane
+    BUILD +base-python-versioned --PYTHON_VERSION=${PYTHON_VERSION} --TAG_SUFFIX=${TAG_SUFFIX}
+    # multiarch-lint: ignore one arch per invocation on its own native builder; ci-base-images.yml merges the two into a manifest list with crane
+    BUILD +base-python-runtime-versioned --PYTHON_VERSION=${PYTHON_VERSION} --TAG_SUFFIX=${TAG_SUFFIX}
+    # multiarch-lint: ignore one arch per invocation on its own native builder; ci-base-images.yml merges the two into a manifest list with crane
+    BUILD +base-java-versioned --JAVA_VERSION=${JAVA_VERSION} --TAG_SUFFIX=${TAG_SUFFIX}
+    # multiarch-lint: ignore one arch per invocation on its own native builder; ci-base-images.yml merges the two into a manifest list with crane
+    BUILD +base-java-runtime-versioned --JAVA_VERSION=${JAVA_VERSION} --TAG_SUFFIX=${TAG_SUFFIX}
+    # multiarch-lint: ignore one arch per invocation on its own native builder; ci-base-images.yml merges the two into a manifest list with crane
+    BUILD +base-bun-versioned --BUN_VERSION=${BUN_VERSION} --TAG_SUFFIX=${TAG_SUFFIX}
+    # multiarch-lint: ignore one arch per invocation on its own native builder; ci-base-images.yml merges the two into a manifest list with crane
+    BUILD +base-bun-runtime-versioned --BUN_VERSION=${BUN_VERSION} --TAG_SUFFIX=${TAG_SUFFIX}
+    # multiarch-lint: ignore one arch per invocation on its own native builder; ci-base-images.yml merges the two into a manifest list with crane
+    BUILD +base-tofu-builder-versioned --TAG_SUFFIX=${TAG_SUFFIX}
+    # multiarch-lint: ignore one arch per invocation on its own native builder; ci-base-images.yml merges the two into a manifest list with crane
+    BUILD +base-tofu-runtime-versioned --TAG_SUFFIX=${TAG_SUFFIX}
+    # multiarch-lint: ignore one arch per invocation on its own native builder; ci-base-images.yml merges the two into a manifest list with crane
+    BUILD +base-crossplane-builder-versioned --GOLANG_VERSION=${GOLANG_VERSION} --TAG_SUFFIX=${TAG_SUFFIX}
