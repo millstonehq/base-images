@@ -1,3 +1,19 @@
+# BUILD ONLY. THE PUBLIC MIRROR PROVES THESE IMAGES BUILD; IT DOES NOT PUBLISH THEM.
+#
+# mill publishes ghcr.io/millstonehq/{base,go,python,java,bun,tofu,crossplane} from its own
+# ci-base-images.yml, natively on two builders, with a registry read-back that fails unless every
+# tag carries both architectures. This repository is a copybara export of that source, and if it
+# also published it would race those tags from a second place with no coordination -- last writer
+# wins, and neither side knows.
+#
+# THAT IS NOT HYPOTHETICAL HERE. ghcr.io/millstonehq/python:3.14 was published once, on
+# 2026-01-01, and never again; by 2026-09-13 Chainguard's packages needed a newer glibc than that
+# frozen tag shipped, so every `apk add` on top of it installed a mismatch and reported success.
+# One publisher, on a schedule, is the fix for that. Two publishers is the same disease.
+#
+# A PR here still builds every image, which is what a public mirror is for: someone can verify the
+# recipe without credentials. It just does not write to the registry.
+
 name: CI - Base Images
 
 on:
@@ -8,29 +24,20 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-publish:
-    name: Build and Publish Multi-Arch Images
+  build:
+    name: Build Multi-Arch Images
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Login to GitHub Container Registry
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Multi-Arch Images
         uses: ./.github/actions/build-images
         with:
           earthly-target: '+publish-multiarch'
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          push: 'false'
 
       - name: Build Summary (PR)
         if: success() && github.event_name == 'pull_request'
@@ -46,58 +53,19 @@ jobs:
           echo ""
           echo "Platforms: linux/amd64, linux/arm64"
 
-      - name: Publish Summary
+      - name: Not a publisher, and not an automatic importer
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          echo "✓ Successfully published base images"
+          echo "Built every image. Published nothing: mill is the only publisher."
           echo ""
-          echo "Published images:"
-          echo "  Foundation:"
-          echo "    - ghcr.io/millstonehq/base:builder"
-          echo "    - ghcr.io/millstonehq/base:runtime"
-          echo "  Go:"
-          echo "    - ghcr.io/millstonehq/go:1.25"
-          echo "    - ghcr.io/millstonehq/go:1.25-runtime"
-          echo "  Python:"
-          echo "    - ghcr.io/millstonehq/python:3.14"
-          echo "    - ghcr.io/millstonehq/python:3.14-runtime"
-          echo "  Java:"
-          echo "    - ghcr.io/millstonehq/java:25"
-          echo "    - ghcr.io/millstonehq/java:25-runtime"
-          echo ""
-          echo "Platforms: linux/amd64, linux/arm64"
-          echo ""
-          echo "Usage:"
-          echo "  FROM ghcr.io/millstonehq/go:1.25"
-          echo "  FROM ghcr.io/millstonehq/python:3.14"
-          echo "  FROM ghcr.io/millstonehq/java:25"
-
-      - name: Check if commit is from Copybara Export
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        id: check-origin
-        run: |
-          # Check if the latest commit has GitOrigin-RevId (means it came from mill export)
           if git log -1 --format=%B | grep -q "GitOrigin-RevId:"; then
-            echo "is_from_mill=true" >> $GITHUB_OUTPUT
-            echo "⏭️  Skipping import: commit came from mill (has GitOrigin-RevId)"
+            echo "This commit came from mill's export (GitOrigin-RevId present)."
           else
-            echo "is_from_mill=false" >> $GITHUB_OUTPUT
-            echo "✓ Will trigger import: external contribution detected"
+            echo "EXTERNAL CONTRIBUTION -- this commit did not come from mill."
+            echo "It exists only here until someone imports it:"
+            echo "    gh workflow run copybara-import-base-images.yml --ref main --repo millstonehq/mill"
+            echo ""
+            echo "This used to dispatch that import automatically. It no longer does:"
+            echo "copybara is a manual operation, so an import is a decision someone makes"
+            echo "rather than a push to mill's main that nobody asked for."
           fi
-
-      - name: Generate GitHub App Token for Cross-Repo Dispatch
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.check-origin.outputs.is_from_mill == 'false'
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.COPYBARA_APP_ID }}
-          private-key: ${{ secrets.COPYBARA_APP_PRIVATE_KEY }}
-          repositories: mill,base-images
-
-      - name: Trigger Copybara Import to Mill
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.check-origin.outputs.is_from_mill == 'false'
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          repository: millstonehq/mill
-          event-type: copybara-import-base-images
