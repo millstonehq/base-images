@@ -85,7 +85,8 @@ runs:
         # run, which uses a local buildkitd with its own generated certs, is left alone. The
         # variable is set on every runner pod by arc-runner-set/values.yaml, so moving a workflow
         # to self-hosted needs no change here beyond `runs-on:`.
-        if [ -n "${EARTH_BUILDKIT_HOST:-}" ]; then earthly config global.tls_enabled false; fi
+        # A runner that sets EARTH_CONFIG configures earth itself.
+        if [ -n "${EARTH_BUILDKIT_HOST:-}" ] && [ -z "${EARTH_CONFIG:-}" ]; then earthly config global.tls_enabled false; fi
         earthly --version
 
     - name: Build with Earthly
